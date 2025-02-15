@@ -1,0 +1,317 @@
+enum PaymentStatus {
+  FREE
+  PRO
+}
+
+enum AlertPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum AlertType {
+  PRICE
+  AI_SIGNAL
+  NEWS
+}
+
+enum NotificationChannel {
+  EMAIL
+  BROWSER
+  PHONE
+}
+
+enum AlertFrequency {
+  INSTANT
+  HOURLY
+  DAILY
+  WEEKLY
+}
+
+enum TimeFrame {
+  MINUTE_1
+  MINUTE_5
+  MINUTE_15
+  HOUR_1
+  HOUR_4
+  DAY_1
+  WEEK_1
+}
+
+enum WatchlistType {
+  WALLET
+  DEFI
+}
+
+enum Language {
+  EN
+  FR
+  ES
+  DE
+  ZH
+}
+
+enum Currency {
+  USD
+  EUR
+  GBP
+  JPY
+  CNY
+}
+
+enum Theme {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
+enum TrackingStatus {
+  ACTIVE
+  PAUSED
+  DELETED
+}
+
+enum IdeaType {
+  LONG
+  SHORT
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String  @id @default(cuid())
+  email         String? @unique
+  name          String?
+  password      String?
+  walletAddress String? @unique
+  phoneNumber   String?
+  image         String?
+
+  // Status fields
+  paymentStatus PaymentStatus @default(FREE)
+  isActive      Boolean       @default(true)
+  isAdmin       Boolean       @default(false)
+  emailVerified DateTime?
+
+  // Notification preferences
+  emailNotifications   Boolean @default(true)
+  browserNotifications Boolean @default(true)
+  phoneNotifications   Boolean @default(false)
+
+  // 2FA
+  twoFactorEnabled Boolean  @default(false)
+  twoFactorSecret  String?
+  backupCodes      String[] // Encrypted backup codes
+
+  // Dashboard Settings
+  dashboardSettings DashboardSettings?
+
+  // Relations
+  sessions      Session[]
+  alerts        AlertInstance[]
+  alertSettings AlertSetting[]
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  trackedAddresses TrackedAddress[]
+  trackedDefi      TrackedDefi[]
+
+  // Ideas Relations
+  ideas      TradingIdea[]
+  comments   Comment[]
+  likedIdeas TradingIdea[] @relation("UserLikedIdeas")
+  savedIdeas TradingIdea[] @relation("UserSavedIdeas")
+
+  // Stats
+  ideasCount Int @default(0)
+  reputation Int @default(0)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model AlertSetting {
+  id        String    @id @default(cuid())
+  user      User      @relation(fields: [userId], references: [id])
+  userId    String
+  type      AlertType
+  timeFrame TimeFrame @default(HOUR_1)
+
+  // Thresholds
+  priceThreshold  Float?
+  volumeThreshold Float?
+  volatilityAlert Boolean @default(false)
+
+  // Notification settings
+  emailEnabled   Boolean @default(true)
+  browserEnabled Boolean @default(true)
+  phoneEnabled   Boolean @default(false)
+
+  // Relations
+  alerts AlertInstance[]
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, type])
+}
+
+model AlertInstance {
+  id             String          @id @default(cuid())
+  user           User            @relation(fields: [userId], references: [id])
+  userId         String
+  setting        AlertSetting    @relation(fields: [settingId], references: [id])
+  settingId      String
+  trackedAddress TrackedAddress? @relation(fields: [addressId], references: [id])
+  addressId      String?
+  trackedDefi    TrackedDefi?    @relation(fields: [defiId], references: [id])
+  defiId         String?
+
+  // Alert details
+  priority      AlertPriority @default(MEDIUM)
+  conditions    Json
+  isActive      Boolean       @default(true)
+  lastTriggered DateTime?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, settingId, addressId])
+  @@unique([userId, settingId, defiId])
+}
+
+model DashboardSettings {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String   @unique
+  theme     Theme    @default(SYSTEM)
+  language  Language @default(EN)
+  currency  Currency @default(USD)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TrackedAddress {
+  id          String          @id @default(cuid())
+  address     String
+  name        String?
+  notes       String?
+  status      TrackingStatus  @default(ACTIVE)
+  user        User            @relation(fields: [userId], references: [id])
+  userId      String
+  lastSynced  DateTime?
+  lastBalance String?
+  totalTx     Int             @default(0)
+  isExchange  Boolean         @default(false)
+  isContract  Boolean         @default(false)
+  tags        String[]
+  alerts      AlertInstance[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([userId, address])
+  @@index([address])
+}
+
+model TrackedDefi {
+  id             String          @id @default(cuid())
+  symbol         String
+  address        String // Contract address
+  name           String?
+  notes          String?
+  status         TrackingStatus  @default(ACTIVE)
+  user           User            @relation(fields: [userId], references: [id])
+  userId         String
+  lastSynced     DateTime?
+  lastPrice      Float?
+  marketCap      Float?
+  volume24h      Float?
+  priceChange24h Float?
+  tags           String[]
+  alerts         AlertInstance[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([userId, symbol])
+  @@index([symbol])
+  @@index([address])
+}
+
+model TradingIdea {
+  id          String    @id @default(cuid())
+  title       String
+  description String    @db.Text
+  symbol      String
+  type        IdeaType
+  timeframe   TimeFrame
+  image       String?
+  likes       Int       @default(0)
+  views       Int       @default(0)
+
+  // Relations
+  author   User      @relation(fields: [authorId], references: [id])
+  authorId String
+  comments Comment[]
+  tags     Tag[]
+  likedBy  User[]    @relation("UserLikedIdeas")
+  savedBy  User[]    @relation("UserSavedIdeas")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([symbol])
+  @@index([authorId])
+}
+
+model Comment {
+  id      String @id @default(cuid())
+  content String @db.Text
+
+  // Relations
+  author   User        @relation(fields: [authorId], references: [id])
+  authorId String
+  idea     TradingIdea @relation(fields: [ideaId], references: [id])
+  ideaId   String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([authorId])
+  @@index([ideaId])
+}
+
+model Tag {
+  id    String        @id @default(cuid())
+  name  String        @unique
+  ideas TradingIdea[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+}
